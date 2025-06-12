@@ -1,4 +1,4 @@
-# app.py - VERSÃO FINAL E CORRIGIDA PARA PRODUÇÃO
+# app.py - VERSÃO FINAL E COMPLETA PARA PRODUÇÃO
 
 import os
 import time
@@ -16,8 +16,11 @@ from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 from fuzzywuzzy import fuzz
 
-# Carrega as variáveis de ambiente
+# Carrega as variáveis de ambiente do arquivo .env
 load_dotenv()
+
+# "SINAL DE VIDA": Esta mensagem será uma das primeiras a aparecer no log se o arquivo for lido.
+print(">>> app.py foi carregado e está sendo executado. <<<")
 
 # Inicializa a aplicação Flask
 app = Flask(__name__)
@@ -42,6 +45,9 @@ def initialize_selenium():
             options.add_argument('--no-sandbox')
             options.add_argument('--disable-dev-shm-usage')
             options.add_argument("window-size=1920,1080")
+            # Em alguns ambientes Docker, especificar o caminho do binário ajuda
+            options.binary_location = "/opt/google/chrome/google-chrome"
+
             driver = webdriver.Chrome(service=service, options=options)
             print("Navegador Selenium inicializado com sucesso.")
             perform_login_selenium()
@@ -86,7 +92,7 @@ def perform_login_selenium():
 
         print("Aguardando 5 segundos para o login processar...")
         time.sleep(5)
-        print(">>> Login (supostamente) realizado com sucesso! <<<")
+        print(">>> Login realizado com sucesso! <<<")
 
     except Exception as e:
         print(f"!!! ERRO GRAVE DURANTE O LOGIN COM SELENIUM: {e} !!!")
@@ -106,6 +112,7 @@ def search_product_on_site(product_query):
     try:
         driver.get(search_url)
         wait = WebDriverWait(driver, 15)
+        # Usa o seletor que confirmamos ser o correto
         wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.card-produto-grid")))
         page_html = driver.page_source
         soup = BeautifulSoup(page_html, 'html.parser')
@@ -114,12 +121,45 @@ def search_product_on_site(product_query):
         if not product_containers:
             return {"original_query": product_query, "error": "Nenhum container de produto encontrado na página."}
 
-        # ... (lógica de busca fuzzy omitida para simplicidade, a anterior está correta) ...
-        # Apenas um exemplo de retorno para validar a estrutura
-        item = product_containers[0]
-        name = item.find('img')['alt'].strip()
-        return {"original_query": product_query, "found_name": name, "price": 10.0, "stock_text": "Em estoque",
-                "stock_available": True, "error": None}
+        best_match_data = None
+        highest_score = 0
+        CONFIDENCE_THRESHOLD = 65  # Nível de confiança ajustado
+
+        for item_soup in product_containers:
+            found_name_element = item_soup.find('img', class_=re.compile(r'Produto_imagemProduto__\w+'))
+            found_name = found_name_element['alt'].strip() if found_name_element else ""
+            if not found_name: continue
+            score = fuzz.ratio(product_query.lower(), found_name.lower())
+
+            if score > highest_score:
+                highest_score = score
+                best_match_data = {"soup": item_soup, "name": found_name}
+
+        if not best_match_data or highest_score < CONFIDENCE_THRESHOLD:
+            error_msg = f"Nenhum resultado com confiança mínima de {CONFIDENCE_THRESHOLD}% encontrado."
+            if best_match_data:
+                error_msg += f" Melhor tentativa foi '{best_match_data['name']}' com pontuação {highest_score}."
+            return {"original_query": product_query, "error": error_msg}
+
+        item_soup = best_match_data["soup"]
+        found_name = best_match_data["name"]
+        price_span = item_soup.find('span', class_=re.compile(r'Produto_textoPrecos__\w+'))
+        price_text = price_span.text.strip() if price_span else "0,00"
+        price_value = 0.0
+        try:
+            cleaned_price = price_text.upper().replace("R$", "").replace(".", "").replace(",", ".").strip()
+            price_value = float(cleaned_price)
+        except (ValueError, AttributeError):
+            price_value = 0.0
+        stock_available = bool(item_soup.find('input', class_=re.compile(r'QuantidadeMaisMenos_input__\w+')))
+        stock_text = "Em estoque" if stock_available else "Sem estoque"
+
+        print(
+            f">>> Produto encontrado: '{found_name}' (Pontuação: {highest_score}%) | Preço: R$ {price_value:.2f} | Estoque: {stock_text}")
+        return {"original_query": product_query, "found_name": found_name, "price": price_value,
+                "stock_text": stock_text, "stock_available": stock_available, "url_searched": search_url,
+                "match_score": highest_score, "error": None}
+
     except Exception as e:
         return {"original_query": product_query, "error": f"Erro na busca: {e}"}
 
@@ -150,7 +190,6 @@ initialize_selenium()
 
 if __name__ == '__main__':
     # Este bloco só será usado se você rodar 'python app.py' localmente.
-    # O Render/Gunicorn não executa este bloco.
     if driver:
         print("--- INICIANDO SERVIDOR FLASK LOCALMENTE ---")
         app.run(host='0.0.0.0', port=5000)

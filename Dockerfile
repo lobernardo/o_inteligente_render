@@ -1,5 +1,5 @@
-# Usa uma imagem base leve com Python
-FROM python:3.11-slim
+# MUDANÇA: Usando uma imagem base mais completa (Bullseye) para melhor compatibilidade
+FROM python:3.11-bullseye
 
 # Define variáveis de ambiente para evitar perguntas durante a instalação
 ENV DEBIAN_FRONTEND=noninteractive
@@ -8,7 +8,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     gnupg \
-    # Dependências para o Chrome
     libglib2.0-0 \
     libnss3 \
     libgconf-2-4 \
