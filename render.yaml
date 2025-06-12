@@ -1,0 +1,15 @@
+services:
+  # Descreve o nosso serviço web
+  - type: web
+    name: api-trio-orcamento
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn app:app"
+    # A parte crucial: definimos o buildpack aqui no código!
+    buildpacks:
+      - url: https://github.com/heroku/heroku-buildpack-google-chrome
+    # Definimos as chaves das variáveis de ambiente
+    envVars:
+      - key: FORNECEDOR_USER
+      - key: FORNECEDOR_PASS
