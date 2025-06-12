@@ -1,15 +1,20 @@
 services:
-  # Descreve o nosso serviço web
   - type: web
     name: api-trio-orcamento
-    env: python
+    # MUDANÇA 1: Usamos um ambiente 'native' para ter controle total.
+    env: native
     plan: free
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "gunicorn app:app"
-    # A parte crucial: definimos o buildpack aqui no código!
+    # MUDANÇA 2: A ordem dos buildpacks é MUITO importante.
+    # Primeiro dizemos para instalar o Python, depois o Chrome.
     buildpacks:
+      - url: heroku/python
       - url: https://github.com/heroku/heroku-buildpack-google-chrome
-    # Definimos as chaves das variáveis de ambiente
+    # O comando de início continua o mesmo. O buildpack do Python
+    # é inteligente e vai ler seu arquivo Procfile para encontrar este comando.
+    startCommand: "gunicorn app:app"
+    # Definimos as variáveis de ambiente que vamos preencher no painel
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9" # Definimos uma versão específica e estável do Python
       - key: FORNECEDOR_USER
       - key: FORNECEDOR_PASS
